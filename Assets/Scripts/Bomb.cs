@@ -63,6 +63,13 @@ public class Bomb : MonoBehaviour
 
         foreach (Collider2D hit in hits)
         {
+            Destructible destructible = hit.GetComponent<Destructible>();
+
+            if (destructible != null)
+            {
+                destructible.DestroyObject();
+            }
+
             // Find the rigid body to target
             Rigidbody2D targetRB = hit.attachedRigidbody;
 
@@ -81,10 +88,16 @@ public class Bomb : MonoBehaviour
             // therefore all thats left is rbs that are dynamic (like the player etc)
 
             // calculate the explosion direction
-            Vector2 direction = (targetRB.worldCenterOfMass - (Vector2)transform.position).normalized;
+            Vector2 direction = (
+                targetRB.worldCenterOfMass - 
+                (Vector2)transform.position
+            ).normalized;
 
             // calculate the actual force based on direction and distance
-            targetRB.AddForce(direction * explosionForce, ForceMode2D.Impulse);
+            targetRB.AddForce(
+                direction * explosionForce,
+                ForceMode2D.Impulse
+            );
 
             Debug.Log("Explosion hit: " + hit.name);
         }
