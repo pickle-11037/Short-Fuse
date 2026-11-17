@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using TMPro;
+using System.Collections;
 
 public class PlayerController : MonoBehaviour
 {
@@ -12,6 +13,22 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private Transform groundCheck;
     [SerializeField] private LayerMask groundLayer;
     [SerializeField] private TMP_Text bombCounterText;
+
+    //RAGDOLL
+    [SerializeField] private ShortstuffRagdoll ragdollPrefab;
+    private ShortstuffRagdoll activeRagdoll;
+    private bool stunned;
+    private Collider2D[] playerColliders;
+    private SpriteRenderer characterSprite;
+
+    //STUN SETTINGS
+    [SerializeField] private float minimumStunTime = 1.5f;
+    [SerializeField] private float maximumStunTime = 4f;
+    [SerializeField] private float recoveryCheckRadius = 0.22f;
+    [SerializeField] private float recoveryHeight = 0.15f;
+
+    private Vector2 standingColliderSize;
+    private Vector2 standingColliderOffset;
 
     // BOMB REFERENCES
     [SerializeField] private GameObject bombPrefab;
@@ -45,6 +62,18 @@ public class PlayerController : MonoBehaviour
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+
+        playerColliders = GetComponentsInChildren<Collider2D>();
+        characterSprite = GetComponentInChildren<SpriteRenderer>();
+
+        Collider2D mainCollider = GetComponent<Collider2D>();
+
+        if (mainCollider != null)
+        {
+            standingColliderSize = mainCollider.bounds.size;
+
+            standingColliderOffset = (Vector2)(mainCollider.bounds.center - transform.position);
+        }
 
         currentBombs = maxBombs;
     }
@@ -83,12 +112,16 @@ public class PlayerController : MonoBehaviour
     // INPUT
     private void Update()
     {
+        if (stunned) return;
+
         moveInput = moveAction.action.ReadValue<Vector2>().x;
     }
 
     // MOVEMENT
     private void FixedUpdate()
     {
+        if (stunned) return;
+
         CheckGround();
         HandleAcceleration();
         HandleMovement();
@@ -117,6 +150,8 @@ public class PlayerController : MonoBehaviour
     // HANDLE JUMPING
     private void OnJump(InputAction.CallbackContext context)
     {
+        if (stunned) return;
+
         jumpRequested = true;
     }
 
@@ -151,6 +186,8 @@ public class PlayerController : MonoBehaviour
     // BOMBS
     private void OnBomb(InputAction.CallbackContext context)
     {
+        if (stunned) return;
+
         PlaceBomb();
     }
 
@@ -189,6 +226,94 @@ public class PlayerController : MonoBehaviour
     {
         bombCounterText.text = "BOMBS: " + currentBombs;
     }
+
+    public void ReceiveExplosion(Vector2 explosionOrigin, Vector2 impulse)
+    {
+        if (stunned) return;
+
+        stunned = true;
+
+        Vector2 previousVelocity = rb.linearVelocity;
+
+        activeRagdoll = Instantiate(
+            ragdollPrefab,
+            transform.position,
+            Quaternion.identity
+        );
+
+        activeRagdoll.Activate(
+            previousVelocity,
+            impulse,
+            explosionOrigin
+        );
+
+        if (characterSprite != null)
+        {
+            characterSprite.enabled = false;
+        }
+
+        foreach (Collider2D col in playerColliders)
+        {
+            col.enabled = false;
+        }
+
+        rb.simulated = false;
+
+        moveInput = 0f;
+        jumpRequested = false;
+
+        StartCoroutine(RecoverWhenReady());
+    }
+
+    private IEnumerator RecoverWhenReady()
+    {
+        yield return new WaitForSeconds(minimumStunTime);
+
+        float elapsed = minimumStunTime;
+
+        while (activeRagdoll != null)
+        {
+            Vector2 torsoPosition = activeRagdoll.TorsoPosition;
+
+            bool nearGround = Physics2D.OverlapCircle(
+                torsoPosition + Vector2.down * 0.55f,
+                recoveryCheckRadius,
+                groundLayer
+            ) != null;
+
+            bool slowEnough = activeRagdoll.TorsoSpeed < 2f;
+
+            if (nearGround && (slowEnough || elapsed >= maximumStunTime))
+            {
+                yield break;
+            }
+
+            elapsed += 0.1f;
+
+            yield return new WaitForSeconds(0.1f);
+        }
+    }
+
+    private void FinishRecovery(Vector2 position)
+    {
+        Destroy(activeRagdoll.gameObject);
+
+        activeRagdoll = null;
+
+        transform.position = position;
+
+        rb.simulated = true;
+        rb.linearVelocity = Vector2.zero;
+        rb.angularVelocity = 0f;
+
+        foreach (Collider2D col in playerColliders)
+        {
+            col.enabled = true;
+        }
+
+        //FINISH THIS HEHE
+    }
+
 
 
 
