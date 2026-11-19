@@ -285,7 +285,20 @@ public class PlayerController : MonoBehaviour
 
             if (nearGround && (slowEnough || elapsed >= maximumStunTime))
             {
-                yield break;
+                Vector2 candidate = torsoPosition + Vector2.up * recoveryHeight;
+
+                bool blocked = Physics2D.OverlapBox(
+                    candidate + standingColliderOffset,
+                    standingColliderSize * 0.5f,
+                    0f,
+                    groundLayer
+                ) != null;
+
+                if (!blocked)
+                {
+                    FinishRecovery(candidate);
+                    yield break;
+                }
             }
 
             elapsed += 0.1f;
@@ -311,7 +324,15 @@ public class PlayerController : MonoBehaviour
             col.enabled = true;
         }
 
-        //FINISH THIS HEHE
+        if (characterSprite != null)
+        {
+            characterSprite.enabled = true;
+        }
+
+        currentSpeed = 0f;
+        moveInput = 0f;
+        jumpRequested = false;
+        stunned = false;
     }
 
 
