@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using TMPro;
 using System.Collections;
+using UnityEditor.Experimental.GraphView;
 
 public class PlayerController : MonoBehaviour
 {
@@ -19,7 +20,7 @@ public class PlayerController : MonoBehaviour
     private ShortstuffRagdoll activeRagdoll;
     private bool stunned;
     private Collider2D[] playerColliders;
-    private SpriteRenderer characterSprite;
+    [SerializeField] private SpriteRenderer characterSprite;
 
     //STUN SETTINGS
     [SerializeField] private float minimumStunTime = 1.5f;
@@ -34,10 +35,21 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private GameObject bombPrefab;
     [SerializeField] private Transform bombSpawnPoint;
 
+    [SerializeField] private float throwForce = 9f;
+
+    [Range(0f, 90f)]
+    [SerializeField] private float throwAngle = 40f;
+
+    [SerializeField] private float throwSpin = 360f;
+
+    private Bomb activeBomb;
+
     // PLAYER INPUT
     private float moveInput;
     private bool jumpRequested = false;
     private bool grounded;
+
+    [SerializeField] private InputActionReference detonateAction;
 
     // MOVEMENT SETTINGS
     [Range(1f, 12f)]
@@ -57,6 +69,9 @@ public class PlayerController : MonoBehaviour
     [Range(0f, 1f)]
     [SerializeField] private float airControl = 0.3f;
 
+    public int FacingDirection { get; private set; } = 1;
+    [SerializeField] private bool spriteFacesRight = true;
+
     // SETUP
 
     private void Awake()
@@ -64,7 +79,6 @@ public class PlayerController : MonoBehaviour
         rb = GetComponent<Rigidbody2D>();
 
         playerColliders = GetComponentsInChildren<Collider2D>();
-        characterSprite = GetComponentInChildren<SpriteRenderer>();
 
         Collider2D mainCollider = GetComponent<Collider2D>();
 
@@ -93,6 +107,12 @@ public class PlayerController : MonoBehaviour
 
         bombAction.action.Enable();
         bombAction.action.performed += OnBomb;
+
+        if (detonateAction != null)
+        {
+            detonateAction.action.Enable();
+            detonateAction.action.performed += OnDetonate;
+        }
     }
 
     private void OnDisable()
@@ -106,6 +126,12 @@ public class PlayerController : MonoBehaviour
         
         bombAction.action.performed -= OnBomb;
         bombAction.action.Disable();
+
+        if (detonateAction != null)
+        {
+            detonateAction.action.performed -= OnDetonate;
+            detonateAction.action.Disable();
+        }
     }
 
 
@@ -115,6 +141,22 @@ public class PlayerController : MonoBehaviour
         if (stunned) return;
 
         moveInput = moveAction.action.ReadValue<Vector2>().x;
+
+        if (moveInput > 0.1f)
+        {
+            FacingDirection = 1;
+        }
+        else if (moveInput < -0.1f)
+        {
+            FacingDirection = -1;
+        }
+
+        if (characterSprite != null)
+        {
+            characterSprite.flipX = spriteFacesRight
+                ? FacingDirection < 0
+                : FacingDirection > 0;
+        }
     }
 
     // MOVEMENT
@@ -188,24 +230,69 @@ public class PlayerController : MonoBehaviour
     {
         if (stunned) return;
 
-        PlaceBomb();
+        ThrowBomb();
     }
 
-    private void PlaceBomb()
+    private void ThrowBomb()
     {
-        if (currentBombs <= 0)
+        if (activeBomb != null)
         {
             return;
         }
         
-        Instantiate(
+        if (currentBombs <= 0)
+        {
+            return;
+        }
+
+        float radians = throwAngle = throwAngle * Mathf.Deg2Rad;
+
+        Vector2 direction = new Vector2(
+            FacingDirection * Mathf.Cos(radians),
+            Mathf.Sin(radians)
+        );
+
+        GameObject instance = Instantiate(
             bombPrefab,
             bombSpawnPoint.position,
             Quaternion.identity
         );
 
+        Bomb bomb = instance.GetComponent<Bomb>();
+
+        activeBomb = bomb;
+
+        activeBomb.Exploded += OnBombExploded;
+
+        if (bomb != null)
+        {
+            bomb.Launch(
+                direction * throwForce,
+                -FacingDirection * throwSpin
+            );
+        }
+
         currentBombs--;
         UpdateBombUI();
+    }
+
+    private void OnBombExploded(Bomb bomb)
+    {
+        if (activeBomb == bomb)
+        {
+            activeBomb.Exploded -= OnBombExploded;
+            activeBomb = null;
+        }
+    }
+
+    private void OnDetonate(InputAction.CallbackContext contect)
+    {
+        if (stunned) return;
+
+        if (activeBomb != null)
+        {
+            activeBomb.Detonate();
+        }
     }
 
     //BOMB INVENTORY

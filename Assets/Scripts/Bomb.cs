@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System;
 
 public class Bomb : MonoBehaviour
 {
@@ -7,6 +8,7 @@ public class Bomb : MonoBehaviour
     // REFERENCES
     private SpriteRenderer spriteRenderer;
     private AudioSource audioSource;
+    private Rigidbody2D rb;
 
     // BOMB SETTINGS
 
@@ -36,6 +38,9 @@ public class Bomb : MonoBehaviour
     [Range(0.01f, 0.5f)]
     [SerializeField] private float imminentFlashInterval = 0.05f;
 
+    public event Action<Bomb> Exploded;
+
+    private bool hasExploded;
 
     // SETUP
 
@@ -45,20 +50,41 @@ public class Bomb : MonoBehaviour
         audioSource = GetComponent<AudioSource>();
 
         originalColor = spriteRenderer.color;
+
+        rb = GetComponent<Rigidbody2D>();
+    }
+
+    public void Launch(Vector2 impulse, float spinDegreesPerSecond)
+    {
+        rb.AddForce(impulse, ForceMode2D.Impulse);
+        rb.angularVelocity = spinDegreesPerSecond;
     }
 
     private void Start()
     {
         StartCoroutine(FlashFuse());// Start flashing on a loop
 
-        Invoke(nameof(Explode), fuseTime); // Explode after (fuseTime) seconds
+        Invoke(nameof(Detonate), fuseTime);
     }
 
 
     // EXPLOSION
+    public void Detonate()
+    {
+        if (hasExploded) return;
+
+        hasExploded = true;
+
+        CancelInvoke(nameof(Detonate));
+        StopAllCoroutines();
+
+        Explode();
+    }
 
     private void Explode()
     {
+        Exploded?.Invoke(this);
+
         Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, explosionRadius);
 
         foreach (Collider2D hit in hits)
