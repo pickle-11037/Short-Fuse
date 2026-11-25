@@ -1,14 +1,9 @@
-using System.Runtime.InteropServices.WindowsRuntime;
 using UnityEngine;
 using System.Collections;
-using UnityEditor.Experimental.GraphView;
-using UnityEditor;
-using UnityEditorInternal;
 
 public class ScreenManager : MonoBehaviour
 {
    
-    
     [Header("Screen settings")]
     [SerializeField] private ScreenBounds currentScreen;
 
@@ -27,7 +22,7 @@ public class ScreenManager : MonoBehaviour
 
     private int physicsStepsRemaining;
 
-
+    public ScreenBounds CurrentScreen => currentScreen;
     public bool IsTransitioning { get; private set; }
 
 

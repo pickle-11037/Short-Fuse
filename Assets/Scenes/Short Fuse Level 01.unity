@@ -373,6 +373,8 @@ MonoBehaviour:
   currentScreen: {fileID: 555152805}
   cameraFollow: {fileID: 519420033}
   playerBody: {fileID: 303983156}
+  playerControls: []
+  transitionDuration: 0.5
   clearanceDistance: 0.05
 --- !u!4 &293492156
 Transform:
