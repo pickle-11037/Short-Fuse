@@ -2,13 +2,21 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using UnityEngine;
 using System.Collections;
 using UnityEditor.Experimental.GraphView;
+using UnityEditor;
+using UnityEditorInternal;
 
 public class ScreenManager : MonoBehaviour
 {
-    [Header("Transition settings")]
+   
+    
+    [Header("Screen settings")]
     [SerializeField] private ScreenBounds currentScreen;
+
+    [Header("Transition settings")]
     [SerializeField] private CameraFollow cameraFollow;
     [SerializeField] private Rigidbody2D playerBody;
+    [SerializeField] private MonoBehaviour[] playerControls;
+    [SerializeField] private float transitionDuration = 0.5f;
 
     [Header("Travel zone settings")]
     [SerializeField] private float clearanceDistance = 0.05f;
@@ -19,7 +27,7 @@ public class ScreenManager : MonoBehaviour
 
     private int physicsStepsRemaining;
 
-    public ScreenBounds CurrentScreen => currentScreen;
+
     public bool IsTransitioning { get; private set; }
 
 
@@ -48,23 +56,50 @@ public class ScreenManager : MonoBehaviour
         if (enteringBody != playerBody)
             return;
 
+        if (IsTransitioning)
+            return;
+
+        if (sourceZone == blockedZone)
+            return;
+
         if (sourceZone.OwnerScreen != currentScreen)
             return;
 
-        ScreenTravelZone destinationZone = sourceZone.LinkedZone;
+        ScreenTravelZone destination = sourceZone.LinkedZone;
 
-        //Teleport the player
-        Vector2 arrivalPosition = destinationZone.ArrivalPoint.position;
-        playerBody.position = arrivalPosition;
+        if (destination == null)
+        {
+            Debug.LogWarning("Travel zone has no connection.");
+            return;
+        }
 
-        //update the current screen
-        SetCurrentScreen(destinationZone.OwnerScreen);
+        if (destination.OwnerScreen == null || destination.ArrivalPoint == null)
+        {
+            Debug.LogWarning("Destinaion is not configured.");
+            return;
+        }
 
-        //calc the new camera pos
-        Vector2 cameraPosition = cameraFollow.ClampToScreen(arrivalPosition, CurrentScreen);
+        if (destination.OwnerScreen == currentScreen)
+            return;
 
-        //repos the cam
-        cameraFollow.SetCameraPosition(cameraPosition);
+        if (sourceZone.OutwardDirection != -destination.OutwardDirection)
+        {
+            Debug.LogWarning("Travel zone directions do not match.");
+            return;
+        }
+
+        Collider2D destinationCollider = destination.GetComponent<Collider2D>();
+
+        if (destinationCollider == null || !destinationCollider.isTrigger || !destinationCollider.enabled)
+        {
+            Debug.LogWarning("Destination trigger is not configured");
+            return;
+        }
+
+        Debug.Log("Travelling from " + sourceZone.OwnerScreen.name + " to " + destination.OwnerScreen.name);
+
+        StartCoroutine(TravelRoutine(sourceZone));
+
     }
 
     public void BlockZone(ScreenTravelZone zone)
@@ -155,4 +190,89 @@ public class ScreenManager : MonoBehaviour
         }
 
     }
+
+
+    private IEnumerator TravelRoutine(ScreenTravelZone sourceZone)
+    {
+        IsTransitioning = true;
+
+        ScreenTravelZone destinationZone = sourceZone.LinkedZone;
+
+        //disable the destination trigger immediately
+        BlockZone(destinationZone);
+
+        //Store player momentum
+        Vector2 storedVelocity = playerBody.linearVelocity;
+        float storedAngularVelocity = playerBody.angularVelocity;
+
+        //store and diable player controls
+        bool[] controlStates = new bool[playerControls.Length];
+
+        for (int i = 0; i < playerControls.Length; i++)
+        {
+            if (playerControls[i] == null)
+                continue;
+
+            controlStates[i] = playerControls[i].enabled;
+            playerControls[i].enabled = false;
+        }
+
+        //Suspend player physics
+        playerBody.simulated = false;
+
+        //calc cam pos
+        Vector2 startPosition = cameraFollow.transform.position;
+        Vector2 arrivalPosition = destinationZone.ArrivalPoint.position;
+
+        Vector2 endPosition = cameraFollow.ClampToScreen(arrivalPosition, destinationZone.OwnerScreen);
+
+        float elapsedTime = 0f;
+
+        //transitioning the cam
+        while (elapsedTime < transitionDuration)
+        {
+            elapsedTime = Time.deltaTime;
+
+            float progress = elapsedTime / transitionDuration;
+            progress = Mathf.SmoothStep(0f, 1f, progress);
+
+            Vector2 cameraPosition = Vector2.Lerp(startPosition, endPosition, progress);
+
+            cameraFollow.SetCameraPosition(cameraPosition);
+
+            yield return null;
+        }
+
+        cameraFollow.SetCameraPosition(endPosition);
+
+        //move the player into the destination screen
+        playerBody.position = arrivalPosition;
+
+        SetCurrentScreen(destinationZone.OwnerScreen);
+
+        //Restore player physics
+        playerBody.simulated = true;
+
+        Physics2D.SyncTransforms();
+
+        //restore player controls
+        for (int i = 0; i < playerControls.Length;  i++)
+        {
+            if (playerControls[i] == null)
+                continue;
+
+            playerControls[i].enabled = controlStates[i];
+        }
+
+        //restores player momentum
+        playerBody.linearVelocity = storedVelocity;
+        playerBody.angularVelocity = storedAngularVelocity;
+
+        //keep the destination blocked through initial physics updates
+        physicsStepsRemaining = 2;
+
+        IsTransitioning = false;
+
+    }
+
 }
